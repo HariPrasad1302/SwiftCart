@@ -1,0 +1,21 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# load test output and logs
+results/
+*.csv
+*.log
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# local data
+*.dump
+*.sql.gz
