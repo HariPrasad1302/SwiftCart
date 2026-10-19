@@ -132,5 +132,6 @@ async def update_price(
     product.price = body.price
     await db.commit()
     await cache_delete(f"store:{store_id}:menu")
+    await cache_delete(f"product:{product_id}") 
 
     return {"id": product.id, "price": product.price}
