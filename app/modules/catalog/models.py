@@ -19,7 +19,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"))
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     price: Mapped[int]
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -30,7 +30,7 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"))
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
     rating: Mapped[int]
 
     store: Mapped["Store"] = relationship(back_populates="reviews")

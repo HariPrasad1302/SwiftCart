@@ -44,4 +44,5 @@ with Session(engine) as db:
         )
 
     db.commit()
+    
     print(f"Seeded {STORES} stores, {STORES * PRODUCTS_PER_STORE} products, and {STORES * REVIEWS_PER_STORE} reviews.")
