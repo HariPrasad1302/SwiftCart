@@ -5,8 +5,8 @@ from sqlalchemy import select, func
 from app.core.db import get_db
 from app.modules.catalog.models import Store, Product, Review
 from fastapi import APIRouter, Query, Depends, HTTPException
-
-from app.core.cache import cache_get, cache_set
+from pydantic import BaseModel, Field
+from app.core.cache import cache_get, cache_set,cache_delete
 router = APIRouter(prefix="/v1/stores", tags=["stores"])
 
 
@@ -102,7 +102,10 @@ async def store_menu(store_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Store not found")
 
     products = (await db.execute(
-        select(Product).where(Product.store_id == store_id, Product.is_active))).scalars().all()
+        select(Product)
+        .where(Product.store_id == store_id, Product.is_active)
+        .order_by(Product.id)
+    )).scalars().all()
 
     menu = {
         "store": {"id": store.id, "name": store.name},
@@ -112,3 +115,28 @@ async def store_menu(store_id: int, db: AsyncSession = Depends(get_db)):
     await cache_set(key, menu, ttl=300)
 
     return menu
+
+
+class PriceUpdate(BaseModel):
+    price: int = Field(gt=0)
+
+
+@router.patch("/{store_id}/products/{product_id}")
+@router.patch("/{store_id}/products/{product_id}")
+async def update_price(
+    store_id: int,
+    product_id: int,
+    body: PriceUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    product = (await db.execute(
+        select(Product).where(Product.id == product_id, Product.store_id == store_id)
+    )).scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    product.price = body.price
+    await db.commit()
+    await cache_delete(f"store:{store_id}:menu")
+
+    return {"id": product.id, "price": product.price}
