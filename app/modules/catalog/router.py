@@ -5,6 +5,8 @@ from sqlalchemy import select, func
 from app.core.db import get_db
 from app.modules.catalog.models import Store, Product, Review
 from fastapi import APIRouter, Query, Depends, HTTPException
+
+from app.core.cache import cache_get, cache_set
 router = APIRouter(prefix="/v1/stores", tags=["stores"])
 
 
@@ -89,6 +91,12 @@ async def list_stores(limit: int = Query(50, ge=1, le=100), cursor: int | None =
 
 @router.get("/{store_id}/menu")
 async def store_menu(store_id: int, db: AsyncSession = Depends(get_db)):
+    key = f"store:{store_id}:menu"
+
+    cached = await cache_get(key)
+    if cached is not None:
+        return cached
+
     store = (await db.execute(select(Store).where(Store.id == store_id))).scalar_one_or_none()
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found")
@@ -96,7 +104,11 @@ async def store_menu(store_id: int, db: AsyncSession = Depends(get_db)):
     products = (await db.execute(
         select(Product).where(Product.store_id == store_id, Product.is_active))).scalars().all()
 
-    return {
+    menu = {
         "store": {"id": store.id, "name": store.name},
         "items": [{"id": p.id, "name": p.name, "price": p.price} for p in products],
     }
+
+    await cache_set(key, menu, ttl=300)
+
+    return menu
