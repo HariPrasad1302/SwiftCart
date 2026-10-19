@@ -4,12 +4,12 @@ from sqlalchemy import select, func
 
 from app.core.db import get_db
 from app.modules.catalog.models import Store, Product, Review
-
+from fastapi import APIRouter, Query, Depends, HTTPException
 router = APIRouter(prefix="/v1/stores", tags=["stores"])
 
 
 @router.get("")
-async def list_stores(db: AsyncSession = Depends(get_db)):
+async def list_stores(limit: int = Query(50, ge=1, le=100), cursor: int | None = Query(None, ge=1), db: AsyncSession = Depends(get_db)):
     # stores = (await db.execute(select(Store).limit(50))).scalars().all()
 
     # result = []
@@ -32,7 +32,7 @@ async def list_stores(db: AsyncSession = Depends(get_db)):
     #         "review_count": reviews,
     #         "product_count": products,
     #     })
-    result = []
+    result = dict()
     avg_rating = (
         select(func.coalesce(func.avg(Review.rating),0))
         .where(Review.store_id == Store.id)
@@ -61,10 +61,17 @@ async def list_stores(db: AsyncSession = Depends(get_db)):
         .order_by(Store.id)
         .limit(50)
     )
+    if cursor is not None:
+        stmt = stmt.where(Store.id > cursor)
+
+    stmt = stmt.order_by(Store.id).limit(limit + 1)
 
     store_rows = (await db.execute(stmt)).all()
 
-    result = [
+    has_more = len(store_rows) > limit
+    store_rows = store_rows[:limit]
+
+    result["items"] = [
         {
             "id": s.id,
             "name": s.name,
@@ -74,6 +81,7 @@ async def list_stores(db: AsyncSession = Depends(get_db)):
         }
         for s in store_rows
     ]
+    result["next_cursor"] = store_rows[-1].id if has_more else None
 
 
     return result
