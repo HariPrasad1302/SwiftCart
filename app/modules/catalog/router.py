@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+import math
+from redis.exceptions import RedisError
+from app.core.redis import redis_client
 
 from app.core.db import get_db
 from app.modules.catalog.models import Store, Product, Review
@@ -135,3 +138,50 @@ async def update_price(
     await cache_delete(f"product:{product_id}") 
 
     return {"id": product.id, "price": product.price}
+
+
+def _haversine_km(lat1, lng1, lat2, lng2) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lng2 - lng1) / 2) ** 2)
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+
+@router.get("/nearby")
+async def nearby_stores(
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(5, gt=0, le=50),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        hits = await redis_client.geosearch(
+            "stores:geo", longitude=lng, latitude=lat,
+            radius=radius_km, unit="km", sort="ASC", count=limit, withdist=True,
+        )
+        distances = {int(member): float(dist) for member, dist in hits}
+    except RedisError:
+        # degrade: scan stores in the DB and compute distances in Python (slower)
+        all_stores = (await db.execute(select(Store.id, Store.lat, Store.lng))).all()
+        scored = sorted(
+            (_haversine_km(lat, lng, s.lat, s.lng), s.id) for s in all_stores
+        )
+        distances = {sid: d for d, sid in scored if d <= radius_km}
+        distances = dict(list(distances.items())[:limit])
+
+    if not distances:
+        return {"items": []}
+
+    rows = (await db.execute(
+        select(Store.id, Store.name, Store.is_open).where(Store.id.in_(distances))
+    )).all()
+    by_id = {r.id: r for r in rows}
+
+    return {
+        "items": [
+            {"id": sid, "name": by_id[sid].name, "is_open": by_id[sid].is_open,
+             "distance_km": round(dist, 3)}
+            for sid, dist in distances.items() if sid in by_id
+        ]
+    }
